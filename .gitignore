@@ -1,0 +1,34 @@
+# ===== Build Output =====
+/build/
+/Debug/
+/Release/
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.su
+
+# ===== IDE: STM32CubeIDE =====
+.settings/
+.cproject
+.project
+*.launch
+.mxproject
+
+# ===== IDE: Keil =====
+/MDK-ARM/*.uvguix.*
+/MDK-ARM/RTE/
+/MDK-ARM/*.bak
+/MDK-ARM/*.dep
+/MDK-ARM/DebugConfig/
+/MDK-ARM/Listings/
+/MDK-ARM/Objects/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
