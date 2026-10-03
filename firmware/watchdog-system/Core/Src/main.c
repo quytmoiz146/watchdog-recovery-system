@@ -32,9 +32,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* 1 = bat WWDG de demo/so sanh voi IWDG.
+/* 1 = bat WWDG de so sanh voi IWDG.
  * Khi bat: main loop KHONG duoc block qua ~15 ms (khong dung HAL_Delay dai). */
-#define APP_ENABLE_WWDG   0
+#define APP_ENABLE_WWDG     0
+
+/* Kich ban so sanh IWDG vs WWDG - tu chay sau WDG_TEST_DELAY_MS:
+ *  0: khong test
+ *  1: Treo cung while(1)              -> IWDG: reset ~1 s   | WWDG: reset ~58 ms
+ *  2: Task chay cham (block 100 ms)   -> IWDG: KHONG reset  | WWDG: reset (refresh tre)
+ *  3: Vong lap chay loan, feed lien tuc-> IWDG: KHONG reset | WWDG: reset (refresh som) */
+#define WDG_TEST_SCENARIO   0
+#define WDG_TEST_DELAY_MS   10000U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -148,7 +156,8 @@ int main(void)
   Status_WWDG_Attach(&hwwdg);
 #endif
 
-  Status_PrintHelp();
+  Status_Printf("[TEST] WWDG: %s | Kich ban so sanh: %d",
+                APP_ENABLE_WWDG ? "ON" : "OFF", WDG_TEST_SCENARIO);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -161,36 +170,45 @@ int main(void)
     /* TEMP: SV1 thay bang IWDG_Monitor_Feed() */
     HAL_IWDG_Refresh(&hiwdg);
 
-    /* SV4: heartbeat + service WWDG + doc lenh UART (non-blocking) */
-    switch (Status_Process())
+    /* SV4 - ung dung nen: service WWDG + LED heartbeat + do nhiet (non-blocking) */
+    Status_Process();
+
+#if (WDG_TEST_SCENARIO != 0)
+    /* ===== Kich ban so sanh IWDG vs WWDG ===== */
+    static uint8_t test_started = 0;
+    if (HAL_GetTick() >= WDG_TEST_DELAY_MS)
     {
-      case CMD_FAULT_LOOP:                      /* TEMP: SV2 Fault_InjectInfiniteLoop() */
-        Status_LogFault(FAULT_INFINITE_LOOP);
-        Status_SetHeartbeat(HB_FAULT);
-        Status_Process();                       /* cap nhat LED sang lien tuc */
-        while (1) { }                           /* khong feed -> watchdog reset */
-
-      case CMD_FAULT_HARD:                      /* TEMP: SV2 Fault_InjectHardFault() */
-        Status_LogFault(FAULT_HARD_FAULT);
-        ((void (*)(void))0x00000000UL)();       /* nhay toi dia chi thieu bit Thumb -> HardFault */
-        break;
-
-      case CMD_FAULT_SENSOR:                    /* TEMP: SV2 Fault_InjectSensorError() */
-        Status_LogFault(FAULT_SENSOR_ERROR);
-        Status_LogHealth(HEALTH_WARNING);
-        break;
-
-      case CMD_SOFT_RESET:
-        Status_LogMessage("[CMD] Software reset...");
-        NVIC_SystemReset();
-        break;
-
-      case CMD_WWDG_EARLY: Status_WWDG_TestEarly(); break;
-      case CMD_WWDG_LATE:  Status_WWDG_TestLate();  break;
-      case CMD_STATUS:     Status_PrintStatus();    break;
-      case CMD_HELP:       Status_PrintHelp();      break;
-      default: break;
+      if (!test_started)
+      {
+        test_started = 1;
+        Status_Printf("[TEST] Bat dau kich ban %d tai t=%lu ms",
+                      WDG_TEST_SCENARIO, (unsigned long)HAL_GetTick());
+      }
+  #if (WDG_TEST_SCENARIO == 1)
+      /* Treo cung: khong feed IWDG, khong refresh WWDG */
+      Status_SetHeartbeat(HB_FAULT);
+      Status_Process();
+      while (1) { }
+  #elif (WDG_TEST_SCENARIO == 2)
+      /* Task chay cham: moi vong lap mat 100 ms (van feed IWDG moi vong)
+       * -> IWDG (1 s) van hai long; WWDG (58 ms) bi refresh tre -> reset */
+      HAL_Delay(100);
+  #elif (WDG_TEST_SCENARIO == 3)
+      /* Vong lap chay loan nhung van goi ham feed lien tuc
+       * -> IWDG khong bao gio reset (khong phat hien duoc loi!)
+       * -> WWDG: refresh khi counter > window -> reset ngay */
+      Status_SetHeartbeat(HB_FAULT);
+      Status_Process();
+      while (1)
+      {
+        HAL_IWDG_Refresh(&hiwdg);
+    #if APP_ENABLE_WWDG
+        HAL_WWDG_Refresh(&hwwdg);
+    #endif
+      }
+  #endif
     }
+#endif
   }
   /* USER CODE END 3 */
 }

@@ -1,7 +1,7 @@
 /**
  * @file    system_status.c
- * @brief   Module trang thai he thong - SV4 phu trach.
- *          LED heartbeat + UART log + lenh UART + WWDG (so sanh voi IWDG).
+ * @brief   Ung dung nen - SV4 phu trach.
+ *          Do nhiet (DHT) + LED heartbeat + UART log + WWDG service.
  */
 #include "system_status.h"
 #include <stdio.h>
@@ -22,20 +22,22 @@
 /* ------------------------------------------------------------------------- */
 /* Bien noi bo                                                               */
 /* ------------------------------------------------------------------------- */
-static UART_HandleTypeDef *s_huart   = NULL;
-static WWDG_HandleTypeDef *s_hwwdg   = NULL;
-static volatile uint8_t    s_wwdg_stop = 0;   /* 1 = ngung refresh (test LATE) */
+static UART_HandleTypeDef *s_huart = NULL;
+static WWDG_HandleTypeDef *s_hwwdg = NULL;
 
 static HeartbeatMode_t s_hb_mode   = HB_NORMAL;
-static uint32_t        s_hb_start  = 0;       /* tick luc vao che do hien tai */
-static int8_t          s_led_state = -1;      /* -1 = chua biet, 0 = tat, 1 = sang */
+static uint32_t        s_hb_start  = 0;
+static int8_t          s_led_state = -1;     /* -1 = chua biet, 0 = tat, 1 = sang */
+
+static uint8_t         s_temp_fail_streak = 0;
+static uint8_t         s_temp_warning     = 0;
 
 /* ------------------------------------------------------------------------- */
 /* Ham noi bo                                                                */
 /* ------------------------------------------------------------------------- */
 static void led_write(uint8_t on)
 {
-    if (s_led_state == (int8_t)on) return;          /* chi ghi khi thay doi */
+    if (s_led_state == (int8_t)on) return;
     HAL_GPIO_WritePin(LED_HEARTBEAT_GPIO_Port, LED_HEARTBEAT_Pin,
                       on ? LED_ON_LEVEL : LED_OFF_LEVEL);
     s_led_state = (int8_t)on;
@@ -67,8 +69,8 @@ static const char *hb_str(HeartbeatMode_t m)
     switch (m) {
         case HB_NORMAL:    return "NORMAL (1Hz)";
         case HB_RECOVERED: return "RECOVERED (10Hz)";
-        case HB_WARNING:   return "WARNING (double blink)";
-        case HB_FAULT:     return "FAULT (solid)";
+        case HB_WARNING:   return "WARNING (chop kep)";
+        case HB_FAULT:     return "FAULT (sang lien tuc)";
         case HB_OFF:       return "OFF";
         default:           return "?";
     }
@@ -84,9 +86,9 @@ static void heartbeat_update(void)
             break;
 
         case HB_RECOVERED:
-            if (el >= HB_RECOVERED_MS) {            /* het thoi gian -> ve NORMAL */
-                Status_SetHeartbeat(HB_NORMAL);
-                Status_LogMessage("Heartbeat -> NORMAL (he thong da on dinh)");
+            if (el >= HB_RECOVERED_MS) {
+                Status_SetHeartbeat(s_temp_warning ? HB_WARNING : HB_NORMAL);
+                Status_LogMessage("Heartbeat -> on dinh");
                 return;
             }
             led_write((el % 200U) < 100U);
@@ -109,27 +111,46 @@ static void heartbeat_update(void)
     }
 }
 
-static StatusCmd_t uart_poll_cmd(void)
+/* Chuyen gia tri x10 thanh chuoi "-12.3" */
+static void fmt_x10(char *out, size_t sz, int32_t v)
 {
-    if (s_huart == NULL) return CMD_NONE;
+    const char *sign = (v < 0) ? "-" : "";
+    if (v < 0) v = -v;
+    snprintf(out, sz, "%s%ld.%ld", sign, (long)(v / 10), (long)(v % 10));
+}
 
-    /* Xoa loi overrun neu co (doc SR roi DR) */
-    if (__HAL_UART_GET_FLAG(s_huart, UART_FLAG_ORE)) {
-        __HAL_UART_CLEAR_OREFLAG(s_huart);
-    }
-    if (!__HAL_UART_GET_FLAG(s_huart, UART_FLAG_RXNE)) return CMD_NONE;
+static void set_temp_warning(uint8_t on)
+{
+    if (on == s_temp_warning) return;
+    s_temp_warning = on;
+    if (s_hb_mode == HB_RECOVERED) return;        /* de LED nhay phuc hoi chay het */
+    Status_LogHealth(on ? HEALTH_WARNING : HEALTH_OK);
+}
 
-    char c = (char)(s_huart->Instance->DR & 0xFFU);
-    switch (c) {
-        case '1':           return CMD_FAULT_LOOP;
-        case '2':           return CMD_FAULT_HARD;
-        case '3':           return CMD_FAULT_SENSOR;
-        case 'r': case 'R': return CMD_SOFT_RESET;
-        case 'e': case 'E': return CMD_WWDG_EARLY;
-        case 'l': case 'L': return CMD_WWDG_LATE;
-        case 's': case 'S': return CMD_STATUS;
-        case 'h': case 'H': case '?': return CMD_HELP;
-        default:            return CMD_NONE;   /* bo qua \r \n va ky tu la */
+static void temp_task(void)
+{
+    if (!Temp_Process()) return;                  /* chua co ket qua moi */
+
+    const TempData_t *d = Temp_GetData();
+
+    if (d->status == TEMP_OK) {
+        char t[12], h[12];
+        fmt_x10(t, sizeof(t), d->temp_x10);
+        fmt_x10(h, sizeof(h), d->hum_x10);
+        Status_Printf("[TEMP] Nhiet do: %s C | Do am: %s %%", t, h);
+
+        s_temp_fail_streak = 0;
+        if (d->temp_x10 >= TEMP_ALARM_X10) {
+            Status_LogMessage("[TEMP] CANH BAO: nhiet do vuot nguong!");
+            set_temp_warning(1);
+        } else {
+            set_temp_warning(0);
+        }
+    } else {
+        if (s_temp_fail_streak < 255U) s_temp_fail_streak++;
+        Status_Printf("[TEMP] Loi doc cam bien: %s (lien tiep %u lan)",
+                      Temp_StatusStr(d->status), (unsigned)s_temp_fail_streak);
+        if (s_temp_fail_streak >= TEMP_FAIL_WARN_COUNT) set_temp_warning(1);
     }
 }
 
@@ -141,20 +162,22 @@ void Status_Init(UART_HandleTypeDef *huart)
     s_huart = huart;
     s_led_state = -1;
     Status_SetHeartbeat(HB_NORMAL);
+    Temp_Init();
 
     uart_send("\r\n", 2);
     Status_LogMessage("==================================================");
     Status_LogMessage("  WATCHDOG RECOVERY SYSTEM - STM32F103C8T6");
     Status_Printf    ("  Build: %s %s", __DATE__, __TIME__);
-    Status_LogMessage("  Go 'h' de xem danh sach lenh");
+    Status_Printf    ("  Cam bien: DHT%d, chu ky doc %lu ms",
+                      DHT_TYPE, (unsigned long)TEMP_READ_PERIOD_MS);
     Status_LogMessage("==================================================");
 }
 
-StatusCmd_t Status_Process(void)
+void Status_Process(void)
 {
     Status_WWDG_Service();
     heartbeat_update();
-    return uart_poll_cmd();
+    temp_task();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -169,12 +192,6 @@ void Status_SetHeartbeat(HeartbeatMode_t mode)
 HeartbeatMode_t Status_GetHeartbeat(void)
 {
     return s_hb_mode;
-}
-
-void Status_HeartbeatToggle(void)
-{
-    HAL_GPIO_TogglePin(LED_HEARTBEAT_GPIO_Port, LED_HEARTBEAT_Pin);
-    s_led_state = -1;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -251,7 +268,7 @@ void Status_LogHealth(HealthStatus_t health)
 {
     Status_Printf("[HEALTH] %s", Status_HealthStr(health));
     switch (health) {
-        case HEALTH_OK:       if (s_hb_mode != HB_RECOVERED) Status_SetHeartbeat(HB_NORMAL); break;
+        case HEALTH_OK:       Status_SetHeartbeat(HB_NORMAL);  break;
         case HEALTH_WARNING:  Status_SetHeartbeat(HB_WARNING); break;
         case HEALTH_CRITICAL: Status_SetHeartbeat(HB_FAULT);   break;
         default: break;
@@ -263,26 +280,16 @@ void Status_LogFault(FaultType_t fault)
     Status_Printf("[FAULT] Kich hoat loi mo phong: %s", Status_FaultStr(fault));
 }
 
-void Status_PrintHelp(void)
-{
-    Status_LogMessage("------------- DANH SACH LENH -------------");
-    Status_LogMessage(" 1 : Treo vong lap      -> IWDG reset");
-    Status_LogMessage(" 2 : HardFault          -> IWDG reset");
-    Status_LogMessage(" 3 : Loi cam bien");
-    Status_LogMessage(" r : Software reset");
-    Status_LogMessage(" e : WWDG refresh QUA SOM -> WWDG reset");
-    Status_LogMessage(" l : WWDG refresh QUA MUON -> WWDG reset");
-    Status_LogMessage(" s : Trang thai he thong");
-    Status_LogMessage(" h : Tro giup");
-    Status_LogMessage("------------------------------------------");
-}
-
 void Status_PrintStatus(void)
 {
     uint32_t t = HAL_GetTick();
+    const TempData_t *d = Temp_GetData();
+
     Status_Printf("[STATUS] Uptime: %lu.%03lu s | Heartbeat: %s",
                   (unsigned long)(t / 1000U), (unsigned long)(t % 1000U),
                   hb_str(s_hb_mode));
+    Status_Printf("[STATUS] DHT: doc OK %lu lan, loi %lu lan",
+                  (unsigned long)d->ok_count, (unsigned long)d->err_count);
     if (Status_WWDG_IsActive()) {
         Status_Printf("[STATUS] WWDG: ON | counter=0x%02lX window=0x%02lX",
                       (unsigned long)(WWDG->CR & WWDG_CR_T),
@@ -294,17 +301,14 @@ void Status_PrintStatus(void)
 
 /* ------------------------------------------------------------------------- */
 /* WWDG                                                                      */
-/*                                                                           */
 /*  PCLK1 = 36 MHz, Prescaler = 8  -> 1 tick = 4096*8/36MHz ~ 0.91 ms         */
 /*  Counter = 127 (0x7F), Window = 80 (0x50), reset khi counter < 64 (0x40)  */
-/*   - Refresh khi counter > 80 (som hon ~42.8 ms)  -> RESET                 */
+/*   - Refresh khi counter > 80 (som hon ~42.8 ms)     -> RESET              */
 /*   - Khong refresh truoc khi counter < 64 (~58.3 ms) -> RESET              */
-/*   => Cua so hop le: ~42.8 ms .. ~58.3 ms sau lan refresh truoc            */
 /* ------------------------------------------------------------------------- */
 void Status_WWDG_Attach(WWDG_HandleTypeDef *hwwdg)
 {
     s_hwwdg = hwwdg;
-    s_wwdg_stop = 0;
     Status_LogMessage("[WWDG] Da kich hoat - cua so refresh ~42.8..58.3 ms");
 }
 
@@ -315,40 +319,10 @@ uint8_t Status_WWDG_IsActive(void)
 
 void Status_WWDG_Service(void)
 {
-    if (s_hwwdg == NULL || s_wwdg_stop) return;
-
-    uint32_t cnt = WWDG->CR  & WWDG_CR_T;
-    uint32_t win = WWDG->CFR & WWDG_CFR_W;
+    if (s_hwwdg == NULL) return;
 
     /* Chi refresh khi counter da xuong toi cua so (counter <= window) */
-    if (cnt <= win) {
+    if ((WWDG->CR & WWDG_CR_T) <= (WWDG->CFR & WWDG_CFR_W)) {
         HAL_WWDG_Refresh(s_hwwdg);
     }
-}
-
-void Status_WWDG_TestEarly(void)
-{
-    if (s_hwwdg == NULL) {
-        Status_LogMessage("[WWDG] Chua bat WWDG (APP_ENABLE_WWDG = 0)");
-        return;
-    }
-    Status_LogMessage("[WWDG] TEST: refresh QUA SOM (counter > window) -> sap reset...");
-
-    /* Doi toi cua so hop le, refresh dung 1 lan (counter = 0x7F)... */
-    while ((WWDG->CR & WWDG_CR_T) > (WWDG->CFR & WWDG_CFR_W)) { }
-    HAL_WWDG_Refresh(s_hwwdg);
-    /* ...roi refresh NGAY lap tuc: 0x7F > 0x50 -> vi pham cua so -> RESET */
-    HAL_WWDG_Refresh(s_hwwdg);
-
-    while (1) { }   /* khong toi duoc day */
-}
-
-void Status_WWDG_TestLate(void)
-{
-    if (s_hwwdg == NULL) {
-        Status_LogMessage("[WWDG] Chua bat WWDG (APP_ENABLE_WWDG = 0)");
-        return;
-    }
-    Status_LogMessage("[WWDG] TEST: ngung refresh -> reset sau toi da ~58 ms...");
-    s_wwdg_stop = 1;
 }

@@ -403,6 +403,11 @@
               <FilePath>../Core/Src/system_status.c</FilePath>
             </File>
             <File>
+              <FileName>temp_sensor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/temp_sensor.c</FilePath>
+            </File>
+            <File>
               <FileName>stm32f1xx_it.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f1xx_it.c</FilePath>
