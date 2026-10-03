@@ -407,6 +407,11 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f1xx_hal_msp.c</FilePath>
             </File>
+            <File>
+              <FileName>watchdog_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/watchdog_manager.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
