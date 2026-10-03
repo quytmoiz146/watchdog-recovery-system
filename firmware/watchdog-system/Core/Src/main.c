@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "shared_types.h"
+#include "system_status.h"   /* SV4 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +32,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+/* 1 = bat WWDG de demo/so sanh voi IWDG.
+ * Khi bat: main loop KHONG duoc block qua ~15 ms (khong dung HAL_Delay dai). */
+#define APP_ENABLE_WWDG   0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,7 +71,32 @@ static void MX_WWDG_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* ===================== TAM THOI (TEST DOC LAP CHO SV4) =====================
+ * Hai ham duoi day chi de SV4 test module rieng.
+ * Khi tich hop: thay bang Reset_GetReason()/Reset_GetCount() cua SV3.
+ * ========================================================================== */
+static ResetReason_t TEMP_ReadResetReason(void)
+{
+  ResetReason_t r;
+  /* Thu tu kiem tra quan trong: khi IWDG/WWDG/SW/POR reset thi co PINRST
+   * cung bi set, nen PINRST phai kiem tra CUOI CUNG. */
+  if      (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) r = RESET_LOW_POWER;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) r = RESET_IWDG;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST)) r = RESET_WWDG;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST))  r = RESET_SOFTWARE;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST))  r = RESET_POWER_ON;
+  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))  r = RESET_PIN;
+  else                                           r = RESET_UNKNOWN;
+  __HAL_RCC_CLEAR_RESET_FLAGS();
+  return r;
+}
 
+static uint32_t TEMP_IncResetCount(void)
+{
+  uint32_t c = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) + 1U;
+  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, c);
+  return c;
+}
 /* USER CODE END 0 */
 
 /**
@@ -104,9 +132,23 @@ int main(void)
   MX_IWDG_Init();
   MX_RTC_Init();
   MX_USART1_UART_Init();
-  MX_WWDG_Init();
   /* USER CODE BEGIN 2 */
+  /* ----- SV4: khoi tao UART log + LED heartbeat ----- */
+  Status_Init(&huart1);
 
+  /* ----- Ghi log nguyen nhan reset (TEMP -> SV3 thay the) ----- */
+  ResetReason_t reason = TEMP_ReadResetReason();
+  uint32_t      count  = TEMP_IncResetCount();
+  Status_LogReset(reason, count);
+
+#if APP_ENABLE_WWDG
+  /* WWDG KHONG tu khoi dong (da tat "Generate function call" trong CubeMX)
+   * vi mot khi da bat thi WWDG khong the tat lai. */
+  MX_WWDG_Init();
+  Status_WWDG_Attach(&hwwdg);
+#endif
+
+  Status_PrintHelp();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,6 +158,39 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* TEMP: SV1 thay bang IWDG_Monitor_Feed() */
+    HAL_IWDG_Refresh(&hiwdg);
+
+    /* SV4: heartbeat + service WWDG + doc lenh UART (non-blocking) */
+    switch (Status_Process())
+    {
+      case CMD_FAULT_LOOP:                      /* TEMP: SV2 Fault_InjectInfiniteLoop() */
+        Status_LogFault(FAULT_INFINITE_LOOP);
+        Status_SetHeartbeat(HB_FAULT);
+        Status_Process();                       /* cap nhat LED sang lien tuc */
+        while (1) { }                           /* khong feed -> watchdog reset */
+
+      case CMD_FAULT_HARD:                      /* TEMP: SV2 Fault_InjectHardFault() */
+        Status_LogFault(FAULT_HARD_FAULT);
+        ((void (*)(void))0x00000000UL)();       /* nhay toi dia chi thieu bit Thumb -> HardFault */
+        break;
+
+      case CMD_FAULT_SENSOR:                    /* TEMP: SV2 Fault_InjectSensorError() */
+        Status_LogFault(FAULT_SENSOR_ERROR);
+        Status_LogHealth(HEALTH_WARNING);
+        break;
+
+      case CMD_SOFT_RESET:
+        Status_LogMessage("[CMD] Software reset...");
+        NVIC_SystemReset();
+        break;
+
+      case CMD_WWDG_EARLY: Status_WWDG_TestEarly(); break;
+      case CMD_WWDG_LATE:  Status_WWDG_TestLate();  break;
+      case CMD_STATUS:     Status_PrintStatus();    break;
+      case CMD_HELP:       Status_PrintHelp();      break;
+      default: break;
+    }
   }
   /* USER CODE END 3 */
 }
