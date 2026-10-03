@@ -35,14 +35,6 @@
 /* 1 = bat WWDG de so sanh voi IWDG.
  * Khi bat: main loop KHONG duoc block qua ~15 ms (khong dung HAL_Delay dai). */
 #define APP_ENABLE_WWDG     0
-
-/* Kich ban so sanh IWDG vs WWDG - tu chay sau WDG_TEST_DELAY_MS:
- *  0: khong test
- *  1: Treo cung while(1)              -> IWDG: reset ~1 s   | WWDG: reset ~58 ms
- *  2: Task chay cham (block 100 ms)   -> IWDG: KHONG reset  | WWDG: reset (refresh tre)
- *  3: Vong lap chay loan, feed lien tuc-> IWDG: KHONG reset | WWDG: reset (refresh som) */
-#define WDG_TEST_SCENARIO   0
-#define WDG_TEST_DELAY_MS   10000U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -156,8 +148,8 @@ int main(void)
   Status_WWDG_Attach(&hwwdg);
 #endif
 
-  Status_Printf("[TEST] WWDG: %s | Kich ban so sanh: %d",
-                APP_ENABLE_WWDG ? "ON" : "OFF", WDG_TEST_SCENARIO);
+  Status_Printf("[WDG] IWDG: ON (~1 s) | WWDG: %s",
+                APP_ENABLE_WWDG ? "ON (~58 ms)" : "OFF");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -173,42 +165,7 @@ int main(void)
     /* SV4 - ung dung nen: service WWDG + LED heartbeat + do nhiet (non-blocking) */
     Status_Process();
 
-#if (WDG_TEST_SCENARIO != 0)
-    /* ===== Kich ban so sanh IWDG vs WWDG ===== */
-    static uint8_t test_started = 0;
-    if (HAL_GetTick() >= WDG_TEST_DELAY_MS)
-    {
-      if (!test_started)
-      {
-        test_started = 1;
-        Status_Printf("[TEST] Bat dau kich ban %d tai t=%lu ms",
-                      WDG_TEST_SCENARIO, (unsigned long)HAL_GetTick());
-      }
-  #if (WDG_TEST_SCENARIO == 1)
-      /* Treo cung: khong feed IWDG, khong refresh WWDG */
-      Status_SetHeartbeat(HB_FAULT);
-      Status_Process();
-      while (1) { }
-  #elif (WDG_TEST_SCENARIO == 2)
-      /* Task chay cham: moi vong lap mat 100 ms (van feed IWDG moi vong)
-       * -> IWDG (1 s) van hai long; WWDG (58 ms) bi refresh tre -> reset */
-      HAL_Delay(100);
-  #elif (WDG_TEST_SCENARIO == 3)
-      /* Vong lap chay loan nhung van goi ham feed lien tuc
-       * -> IWDG khong bao gio reset (khong phat hien duoc loi!)
-       * -> WWDG: refresh khi counter > window -> reset ngay */
-      Status_SetHeartbeat(HB_FAULT);
-      Status_Process();
-      while (1)
-      {
-        HAL_IWDG_Refresh(&hiwdg);
-    #if APP_ENABLE_WWDG
-        HAL_WWDG_Refresh(&hwwdg);
-    #endif
-      }
-  #endif
-    }
-#endif
+    /* SV2: kiem tra nut nhan BTN_FAULT1/BTN_FAULT2 -> kich hoat loi mo phong */
   }
   /* USER CODE END 3 */
 }

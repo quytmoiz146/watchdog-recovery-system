@@ -20,14 +20,16 @@ Terminal: **115200 8N1**. Nên bật timestamp của terminal (Tera Term: *Setup
 | A5 | Cắm lại DHT | Đọc OK → `[HEALTH] OK`, LED về 1 Hz | |
 | A6 | Nhấn NRST | `NRST PIN`, số lần reset tăng | |
 
-## B. So sánh IWDG vs WWDG
-Sửa 2 macro trong `main.c` → build → nạp → quan sát log khi tới mốc t = 10 s.
+## B. So sánh IWDG vs WWDG (dùng nút nhấn lỗi của SV2)
+Nạp firmware 2 lần: `APP_ENABLE_WWDG 0` và `APP_ENABLE_WWDG 1` (trong `main.c`). Mỗi lần nhấn lần lượt từng nút lỗi của SV2, ghi lại nguyên nhân reset và thời gian từ lúc nhấn nút đến lúc banner khởi động lại hiện ra.
 
-| Kịch bản (`WDG_TEST_SCENARIO`) | `APP_ENABLE_WWDG 0` (chỉ IWDG) | `APP_ENABLE_WWDG 1` (IWDG + WWDG) |
+| Lỗi (nút của SV2) | `APP_ENABLE_WWDG 0` (chỉ IWDG) | `APP_ENABLE_WWDG 1` (IWDG + WWDG) |
 |---|---|---|
-| **1** – Treo cứng `while(1)` | Mong đợi: reset sau ~1 s, log `IWDG` → Thực tế: | Mong đợi: reset sau ~58 ms, log `WWDG` → Thực tế: |
-| **2** – Task chậm (100 ms/vòng) | Mong đợi: **không reset** (vẫn đọc nhiệt) → Thực tế: | Mong đợi: reset, log `WWDG` (refresh trễ) → Thực tế: |
-| **3** – Vòng lặp chạy loạn, feed liên tục | Mong đợi: **không reset**, LED sáng đứng → Thực tế: | Mong đợi: reset ngay, log `WWDG` (refresh sớm) → Thực tế: |
+| Treo vòng lặp | Mong đợi: reset ~1 s, log `IWDG` → Thực tế: | Mong đợi: reset ~58 ms, log `WWDG` → Thực tế: |
+| Chờ cảm biến vô hạn | Mong đợi: reset ~1 s, log `IWDG` → Thực tế: | Mong đợi: reset ~58 ms, log `WWDG` → Thực tế: |
+| HardFault | Mong đợi: reset ~1 s, log `IWDG` → Thực tế: | Mong đợi: reset ~58 ms, log `WWDG` → Thực tế: |
+
+> Ghi chú: HardFault_Handler mặc định là `while(1)` nên cũng được watchdog xử lý như treo vòng lặp.
 
 ## C. Bảng thông số
 | Thông số | Lý thuyết | Đo được |
