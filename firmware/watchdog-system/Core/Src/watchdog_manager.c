@@ -1,13 +1,6 @@
-/**
-  ******************************************************************************
-  * @file    watchdog_manager.c
-  * @brief   SV1 - IWDG + chien luoc nap lai chi khi moi tac vu bao "khoe".
-  *          Truy cap thanh ghi IWDG truc tiep (giong het trinh tu cua HAL_IWDG_Init).
-  ******************************************************************************
-  */
+
 #include "watchdog_manager.h"
 
-/* ---- Truy cap thanh ghi (co the ghi de khi chay thu tren may tinh) -------- */
 #ifndef WDG_REG_WRITE
 #define WDG_REG_WRITE(reg, val)   (IWDG->reg = (uint32_t)(val))
 #endif
@@ -15,38 +8,32 @@
 #define WDG_REG_READ(reg)         (IWDG->reg)
 #endif
 
-/* Khoa ghi vao IWDG_KR (RM0008 muc 19.4.1) */
-#define WDG_KEY_RELOAD            0xAAAAU   /* nap lai bo dem tu RLR        */
-#define WDG_KEY_UNLOCK            0x5555U   /* mo quyen ghi PR va RLR       */
-#define WDG_KEY_START             0xCCCCU   /* bat IWDG (khong tat lai duoc) */
+#define WDG_KEY_RELOAD            0xAAAAU
+#define WDG_KEY_UNLOCK            0x5555U
+#define WDG_KEY_START             0xCCCCU
 
 #define WDG_SR_UPDATE_FLAGS       (IWDG_SR_PVU | IWDG_SR_RVU)
-/* PR/RLR can toi da 5 chu ky xung IWDG (<= 5*256/30kHz ~ 43 ms) de cap nhat */
+
 #define WDG_UPDATE_TIMEOUT_MS     150UL
 
-/* He so chia hop le cua IWDG, chi so = gia tri ghi vao IWDG_PR */
 #define WDG_PR_LEVELS             7U
 #define WDG_DIV_FROM_PR(pr)       (4UL << (pr))
 
-/* Bien do chap nhan cho ket qua do LSI: ngoai khoang nay coi nhu do sai */
 #define WDG_LSI_ACCEPT_MIN_HZ     15000UL
 #define WDG_LSI_ACCEPT_MAX_HZ     120000UL
 
-/* Phep do LSI quy doi tu nhip giay cua RTC, nen RTC phai duoc chia theo LSI_VALUE */
 WDG_STATIC_ASSERT(lsi_value_matches, LSI_VALUE == WDG_LSI_NOMINAL_HZ);
 
-/* ---- Bien noi bo --------------------------------------------------------- */
-static volatile uint32_t   s_alive_mask;      /* bit i = 1 : tac vu i da check-in */
+static volatile uint32_t   s_alive_mask;
 static uint32_t            s_refresh_count;
 static uint32_t            s_last_refresh_tick;
-static uint8_t             s_warned;          /* da canh bao trong cua so nay chua */
-static WDG_Phase           s_phase;           /* OFF -> BOOT -> RUN               */
-static uint32_t            s_lsi_hz;          /* f_LSI dang dung (Hz)             */
-static uint8_t             s_lsi_measured;    /* 1 neu s_lsi_hz la do thuc te     */
-static uint32_t            s_prescaler_div;   /* he so chia dang nap              */
-static uint32_t            s_reload;          /* gia tri RLR dang nap             */
+static uint8_t             s_warned;
+static WDG_Phase           s_phase;
+static uint32_t            s_lsi_hz;
+static uint8_t             s_lsi_measured;
+static uint32_t            s_prescaler_div;
+static uint32_t            s_reload;
 
-/* ---- Vung gang (an toan khi Checkin goi tu ngat) -------------------------- */
 __STATIC_INLINE uint32_t enter_critical(void)
 {
   uint32_t primask = __get_PRIMASK();
@@ -62,7 +49,6 @@ __STATIC_INLINE void exit_critical(uint32_t primask)
   }
 }
 
-/* ---- Chan xung moc ------------------------------------------------------- */
 #if WDG_KICK_MARKER_ENABLE
 static void marker_init(void)
 {
@@ -78,19 +64,14 @@ static void marker_init(void)
 }
 #endif
 
-/* ---- NOI DUY NHAT trong toan chuong trinh ghi khoa nap lai vao IWDG -------- */
 static void wdg_kick(void)
 {
 #if WDG_KICK_MARKER_ENABLE
-  HAL_GPIO_TogglePin(WDG_MARKER_PORT, WDG_MARKER_PIN);   /* moc: ngay TRUOC khi nap */
+  HAL_GPIO_TogglePin(WDG_MARKER_PORT, WDG_MARKER_PIN);
 #endif
   WDG_REG_WRITE(KR, WDG_KEY_RELOAD);
 }
 
-/* ---- Chon Prescaler/Reload cho mot cap (f_LSI, timeout mong muon) ---------
- * Lay he so chia NHO NHAT ma so nhip con vua 12 bit => do phan giai min nhat.
- * Dung chung cho ca giai doan BOOT, giai doan RUN va cho moi tan so LSI do duoc,
- * nen chi co MOT thuat toan tinh timeout trong toan bo chuong trinh.            */
 static uint8_t wdg_calc(uint32_t lsi_hz, uint32_t target_ms, uint8_t *pr_bits, uint32_t *reload)
 {
   uint32_t i;
@@ -109,7 +90,6 @@ static uint8_t wdg_calc(uint32_t lsi_hz, uint32_t target_ms, uint8_t *pr_bits, u
   return 0U;
 }
 
-/* ---- Nap Prescaler/Reload vao IWDG (IWDG phai dang chay) ------------------ */
 static HAL_StatusTypeDef wdg_program(uint8_t pr_bits, uint32_t reload)
 {
   uint32_t t0;
@@ -129,18 +109,16 @@ static HAL_StatusTypeDef wdg_program(uint8_t pr_bits, uint32_t reload)
 
   s_prescaler_div = WDG_DIV_FROM_PR(pr_bits);
   s_reload        = reload;
-  wdg_kick();                               /* nap day bo dem ngay sau khi cau hinh */
+  wdg_kick();
   return HAL_OK;
 }
 
-/* ---- Hook mac dinh (rong) ------------------------------------------------- */
 __WEAK void WDG_OnUnhealthy(uint32_t missing_mask, uint32_t ms_since_refresh)
 {
   (void)missing_mask;
   (void)ms_since_refresh;
 }
 
-/* ---- Giai doan BOOT -------------------------------------------------------- */
 HAL_StatusTypeDef WDG_BootStart(void)
 {
   uint8_t  pr;
@@ -149,7 +127,7 @@ HAL_StatusTypeDef WDG_BootStart(void)
 
   if (s_phase != WDG_PHASE_OFF)
   {
-    return HAL_OK;                          /* da bat roi, khong bat lai */
+    return HAL_OK;
   }
 
   s_alive_mask    = 0U;
@@ -167,12 +145,11 @@ HAL_StatusTypeDef WDG_BootStart(void)
 
   if (wdg_calc(WDG_LSI_NOMINAL_HZ, WDG_BOOT_TIMEOUT_MS, &pr, &rl) == 0U)
   {
-    pr = (uint8_t)(WDG_PR_LEVELS - 1U);     /* khong tinh duoc -> timeout dai nhat */
+    pr = (uint8_t)(WDG_PR_LEVELS - 1U);
     rl = 4095UL;
   }
 
-  /* Trinh tu giong HAL_IWDG_Init: bat -> mo khoa -> ghi PR, RLR -> cho cap nhat -> nap */
-  WDG_REG_WRITE(KR, WDG_KEY_START);         /* bat IWDG, LSI tu dong bat */
+  WDG_REG_WRITE(KR, WDG_KEY_START);
   st = wdg_program(pr, rl);
   if (st != HAL_OK)
   {
@@ -186,21 +163,20 @@ HAL_StatusTypeDef WDG_BootStart(void)
 
 void WDG_BootKick(void)
 {
-  if (s_phase == WDG_PHASE_BOOT)            /* het giai doan BOOT thi vo hieu */
+  if (s_phase == WDG_PHASE_BOOT)
   {
     wdg_kick();
     s_last_refresh_tick = HAL_GetTick();
   }
 }
 
-/* ---- Do f_LSI thuc te bang RTC -------------------------------------------- */
 #if WDG_MEASURE_LSI
-/* Xoa co trong RTC_CRL roi cho phan cung dat lai; tra ve tick luc co duoc dat. */
+
 static uint8_t rtc_wait_flag(uint32_t flag, uint32_t timeout_ms, uint32_t *tick_out)
 {
   uint32_t t0 = HAL_GetTick();
 
-  RTC->CRL &= ~flag;                        /* ghi 0 de xoa; ghi 1 khong co tac dung */
+  RTC->CRL &= ~flag;
   while ((RTC->CRL & flag) == 0U)
   {
     if ((HAL_GetTick() - t0) > timeout_ms)
@@ -222,13 +198,11 @@ uint8_t WDG_MeasureLsi(void)
   uint32_t dt;
   uint32_t hz;
 
-  /* RTC_CNT/PRL chi doc duoc sau khi dong bo xong (RM0008 muc 18.3.3) */
   if (rtc_wait_flag(RTC_CRL_RSF, WDG_LSI_MEAS_TIMEOUT_MS, NULL) == 0U)
   {
     return 0U;
   }
 
-  /* Hai nhip giay lien tiep cua RTC = LSI_VALUE nhip LSI, do bang HAL_GetTick (goc HSE) */
   if (rtc_wait_flag(RTC_CRL_SECF, WDG_LSI_MEAS_TIMEOUT_MS, &t1) == 0U)
   {
     return 0U;
@@ -247,7 +221,7 @@ uint8_t WDG_MeasureLsi(void)
   hz = (LSI_VALUE * 1000UL) / dt;
   if ((hz < WDG_LSI_ACCEPT_MIN_HZ) || (hz > WDG_LSI_ACCEPT_MAX_HZ))
   {
-    return 0U;                              /* ket qua vo ly -> giu gia tri danh dinh */
+    return 0U;
   }
 
   s_lsi_hz       = hz;
@@ -259,9 +233,8 @@ uint8_t WDG_MeasureLsi(void)
 {
   return 0U;
 }
-#endif /* WDG_MEASURE_LSI */
+#endif
 
-/* ---- Giai doan RUN --------------------------------------------------------- */
 HAL_StatusTypeDef WDG_Init(void)
 {
   uint8_t  pr;
@@ -271,7 +244,7 @@ HAL_StatusTypeDef WDG_Init(void)
 
   if (s_phase == WDG_PHASE_OFF)
   {
-    st = WDG_BootStart();                   /* cho phep dung WDG_Init() mot minh */
+    st = WDG_BootStart();
     if (st != HAL_OK)
     {
       return st;
@@ -279,14 +252,14 @@ HAL_StatusTypeDef WDG_Init(void)
   }
 
 #if WDG_AUTO_TRIM_TO_LSI
-  hz = s_lsi_hz;                            /* do duoc, hoac danh dinh neu do that bai */
+  hz = s_lsi_hz;
 #else
   hz = WDG_LSI_NOMINAL_HZ;
 #endif
 
   if (wdg_calc(hz, WDG_TIMEOUT_TARGET_MS, &pr, &rl) == 0U)
   {
-    pr = WDG_PR_BITS;                       /* quay ve hang so tinh luc bien dich */
+    pr = WDG_PR_BITS;
     rl = WDG_RELOAD_VALUE;
   }
 
@@ -328,7 +301,7 @@ uint8_t WDG_Supervise(void)
 
   if (s_phase != WDG_PHASE_RUN)
   {
-    return 0U;                              /* chua vao giai doan van hanh */
+    return 0U;
   }
 
   pm    = enter_critical();
@@ -336,7 +309,7 @@ uint8_t WDG_Supervise(void)
 
   if ((alive & WDG_ALL_TASKS_MASK) == WDG_ALL_TASKS_MASK)
   {
-    /* Moi tac vu deu khoe -> nap lai watchdog, bat dau cua so moi */
+
     s_alive_mask = 0U;
     exit_critical(pm);
 
@@ -348,7 +321,6 @@ uint8_t WDG_Supervise(void)
   }
   exit_critical(pm);
 
-  /* Chua du: KHONG refresh. Neu qua lau, bao canh mot lan truoc khi IWDG reset */
   elapsed = now - s_last_refresh_tick;
   if ((elapsed >= WDG_WARN_AFTER_MS) && (s_warned == 0U))
   {
