@@ -1,0 +1,28 @@
+--cpu Cortex-M3
+"sv2_da_sua\startup_stm32f103xb.o"
+"sv2_da_sua\fault_injection.o"
+"sv2_da_sua\main.o"
+"sv2_da_sua\gpio.o"
+"sv2_da_sua\iwdg.o"
+"sv2_da_sua\tim.o"
+"sv2_da_sua\stm32f1xx_it.o"
+"sv2_da_sua\stm32f1xx_hal_msp.o"
+"sv2_da_sua\stm32f1xx_hal_gpio_ex.o"
+"sv2_da_sua\stm32f1xx_hal_iwdg.o"
+"sv2_da_sua\stm32f1xx_hal.o"
+"sv2_da_sua\stm32f1xx_hal_rcc.o"
+"sv2_da_sua\stm32f1xx_hal_rcc_ex.o"
+"sv2_da_sua\stm32f1xx_hal_gpio.o"
+"sv2_da_sua\stm32f1xx_hal_dma.o"
+"sv2_da_sua\stm32f1xx_hal_cortex.o"
+"sv2_da_sua\stm32f1xx_hal_pwr.o"
+"sv2_da_sua\stm32f1xx_hal_flash.o"
+"sv2_da_sua\stm32f1xx_hal_flash_ex.o"
+"sv2_da_sua\stm32f1xx_hal_exti.o"
+"sv2_da_sua\stm32f1xx_hal_tim.o"
+"sv2_da_sua\stm32f1xx_hal_tim_ex.o"
+"sv2_da_sua\system_stm32f1xx.o"
+--strict --scatter "sv2_da_sua\sv2_da_sua.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list "sv2_da_sua.map" -o sv2_da_sua\sv2_da_sua.axf
