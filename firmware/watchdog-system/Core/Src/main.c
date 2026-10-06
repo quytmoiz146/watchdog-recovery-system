@@ -21,8 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <stdarg.h>
+#include "iwdg_monitor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,18 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* SV1 - IWDG: timeout = (Reload + 1) x Prescaler / f_LSI
- *            = (624 + 1) x 64 / 40000 Hz = 1,000 s
- * IWDG chi duoc nap lai khi MOI tac vu da bao khoe trong chu ky hien tai. */
-#define WDG_LSI_HZ            40000U   /* tan so LSI danh dinh (Hz) */
-#define WDG_TASK_PERIOD_MS    100U     /* chu ky moi tac vu bao khoe */
-#define WDG_ALIVE_LOG_MS      1000U    /* chu ky in "alive" qua UART */
-#define WDG_UART_TIMEOUT_MS   20U
 
-#define WDG_TASK_HEARTBEAT    0U       /* tac vu nhay LED PC13 */
-#define WDG_TASK_UART         1U       /* tac vu gui log UART */
-#define WDG_TASK_COUNT        2U
-#define WDG_ALL_TASKS_MASK    ((1UL << WDG_TASK_COUNT) - 1UL)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -63,8 +51,7 @@ UART_HandleTypeDef huart1;
 WWDG_HandleTypeDef hwwdg;
 
 /* USER CODE BEGIN PV */
-static volatile uint32_t wdg_alive_mask = 0U;   /* bit i = 1: tac vu i da bao khoe */
-static uint32_t wdg_refresh_count = 0U;         /* so lan da nap lai IWDG */
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -76,12 +63,7 @@ static void MX_RTC_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_WWDG_Init(void);
 /* USER CODE BEGIN PFP */
-void WDG_Checkin(uint32_t task_id);
-static void WDG_Supervise(void);
-static uint32_t WDG_TimeoutMs(void);
-static void Task_Heartbeat(void);
-static void Task_Uart(void);
-static void Uart_Printf(const char *fmt, ...);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -124,10 +106,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_WWDG_Init();
   /* USER CODE BEGIN 2 */
-  Uart_Printf("\r\n[SV1] IWDG Prescaler=%lu Reload=%lu -> timeout=%lu ms\r\n",
-              (unsigned long)(4UL << hiwdg.Init.Prescaler),
-              (unsigned long)hiwdg.Init.Reload,
-              (unsigned long)WDG_TimeoutMs());
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,9 +116,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    Task_Heartbeat();
-    Task_Uart();
-    WDG_Supervise();
+    IWDG_Monitor_Feed();
   }
   /* USER CODE END 3 */
 }
@@ -248,7 +225,7 @@ static void MX_IWDG_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN IWDG_Init 2 */
-
+  IWDG_Monitor_Init(&hiwdg);
   /* USER CODE END IWDG_Init 2 */
 
 }
@@ -414,111 +391,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/* SV1 - Tac vu bao khoe: dat 1 bit trong wdg_alive_mask.
- * Goi duoc ca tu ngat nen dung vung gang khi sua mask. */
-void WDG_Checkin(uint32_t task_id)
-{
-  uint32_t primask;
 
-  if (task_id >= WDG_TASK_COUNT)
-  {
-    return;
-  }
-  primask = __get_PRIMASK();
-  __disable_irq();
-  wdg_alive_mask |= (1UL << task_id);
-  __set_PRIMASK(primask);
-}
-
-/* SV1 - Chi nap lai IWDG khi du tat ca tac vu da bao khoe, roi xoa mask.
- * Mot tac vu bi treo se khong bao khoe -> IWDG khong duoc nap -> MCU reset sau timeout. */
-static void WDG_Supervise(void)
-{
-  uint32_t primask = __get_PRIMASK();
-
-  __disable_irq();
-  if ((wdg_alive_mask & WDG_ALL_TASKS_MASK) == WDG_ALL_TASKS_MASK)
-  {
-    wdg_alive_mask = 0U;
-    __set_PRIMASK(primask);
-    (void)HAL_IWDG_Refresh(&hiwdg);
-    wdg_refresh_count++;
-    return;
-  }
-  __set_PRIMASK(primask);
-}
-
-/* SV1 - Timeout danh dinh (ms) tinh tu cau hinh IWDG cua CubeMX.
- * Hang so IWDG_PRESCALER_x la gia tri bit PR: he so chia = 4 << PR. */
-static uint32_t WDG_TimeoutMs(void)
-{
-  uint32_t div = 4UL << hiwdg.Init.Prescaler;
-
-  return ((hiwdg.Init.Reload + 1UL) * div * 1000UL) / WDG_LSI_HZ;
-}
-
-/* Tac vu 1: nhay LED PC13 moi 500 ms, bao khoe moi chu ky tac vu. */
-static void Task_Heartbeat(void)
-{
-  static uint32_t next = 0U;
-  static uint32_t cnt = 0U;
-  uint32_t now = HAL_GetTick();
-
-  if ((int32_t)(now - next) < 0)
-  {
-    return;
-  }
-  next = now + WDG_TASK_PERIOD_MS;
-
-  if ((++cnt % (500U / WDG_TASK_PERIOD_MS)) == 0U)
-  {
-    HAL_GPIO_TogglePin(LED_HEARTBEAT_GPIO_Port, LED_HEARTBEAT_Pin);
-  }
-  WDG_Checkin(WDG_TASK_HEARTBEAT);
-}
-
-/* Tac vu 2: in "alive" moi 1 s; chi bao khoe khi UART con hoat dong. */
-static void Task_Uart(void)
-{
-  static uint32_t next = 0U;
-  static uint32_t cnt = 0U;
-  uint32_t now = HAL_GetTick();
-
-  if ((int32_t)(now - next) < 0)
-  {
-    return;
-  }
-  next = now + WDG_TASK_PERIOD_MS;
-
-  if (huart1.gState != HAL_UART_STATE_READY)
-  {
-    return;
-  }
-  if ((++cnt % (WDG_ALIVE_LOG_MS / WDG_TASK_PERIOD_MS)) == 0U)
-  {
-    Uart_Printf("[SV1] alive, refresh=%lu\r\n", (unsigned long)wdg_refresh_count);
-  }
-  WDG_Checkin(WDG_TASK_UART);
-}
-
-static void Uart_Printf(const char *fmt, ...)
-{
-  char buf[96];
-  va_list args;
-  int len;
-
-  va_start(args, fmt);
-  len = vsnprintf(buf, sizeof(buf), fmt, args);
-  va_end(args);
-  if (len > 0)
-  {
-    if (len > (int)(sizeof(buf) - 1U))
-    {
-      len = (int)(sizeof(buf) - 1U);
-    }
-    (void)HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)len, WDG_UART_TIMEOUT_MS);
-  }
-}
 /* USER CODE END 4 */
 
 /**
