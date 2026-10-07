@@ -1,29 +1,24 @@
 /**
  * @file    temp_sensor.c
- * @brief   Driver DHT11 / DHT22 - SV4 phu trach.
+ * @brief   Driver DHT11 tren PA8 - SV4 phu trach.
  *
  *  Giao thuc 1 day:
- *   MCU keo LOW >= 18 ms (DHT11) / ~2 ms (DHT22) -> nha ra (len HIGH)
- *   DHT tra loi: LOW 80 us -> HIGH 80 us
+ *   MCU keo LOW >= 18 ms -> nha ra (len HIGH)
+ *   DHT11 tra loi: LOW 80 us -> HIGH 80 us
  *   40 bit: moi bit = LOW 50 us + HIGH 26-28 us (bit 0) hoac 70 us (bit 1)
- *   Byte: [Hum_H][Hum_L][Temp_H][Temp_L][Checksum]
+ *   Byte: [Hum_nguyen][Hum_thapphan][Temp_nguyen][Temp_thapphan][Checksum]
  */
 #include "temp_sensor.h"
 
-#if (DHT_TYPE == DHT_TYPE_DHT11)
-#define DHT_START_LOW_MS   20U      /* >= 18 ms */
-#else
-#define DHT_START_LOW_MS   2U       /* 1..10 ms */
-#endif
-
+#define DHT11_START_LOW_MS    20U   /* >= 18 ms */
 #define BIT_ONE_THRESHOLD_US  40U   /* HIGH > 40 us => bit 1 */
 
 typedef enum { ST_IDLE = 0, ST_START_LOW } TempState_t;
 
 static TempData_t  s_data;
-static TempState_t s_state     = ST_IDLE;
-static uint32_t    s_t_start   = 0;
-static uint32_t    s_last_read = 0;
+static TempState_t s_state      = ST_IDLE;
+static uint32_t    s_t_start    = 0;
+static uint32_t    s_last_read  = 0;
 static uint32_t    s_cyc_per_us = 72;
 
 /* ------------------------------------------------------------------------- */
@@ -44,12 +39,12 @@ static inline uint32_t us_since(uint32_t c0)
 
 static inline void pin_write(GPIO_PinState st)
 {
-    HAL_GPIO_WritePin(DHT_DATA_GPIO_Port, DHT_DATA_Pin, st);
+    HAL_GPIO_WritePin(DHT11_PORT, DHT11_PIN, st);
 }
 
 static inline GPIO_PinState pin_read(void)
 {
-    return HAL_GPIO_ReadPin(DHT_DATA_GPIO_Port, DHT_DATA_Pin);
+    return HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN);
 }
 
 /* Cho trong khi chan con o muc 'level'. Tra ve so us da cho, hoac -1 neu timeout. */
@@ -88,15 +83,9 @@ static TempStatus_t read_frame(uint8_t b[5])
 
 static void decode(const uint8_t b[5])
 {
-#if (DHT_TYPE == DHT_TYPE_DHT11)
     s_data.hum_x10  = (uint16_t)(b[0] * 10U + (b[1] % 10U));
-    s_data.temp_x10 = (int16_t)((b[2] & 0x7FU) * 10 + (b[3] % 10U));
+    s_data.temp_x10 = (int16_t)((b[2] & 0x7FU) * 10U + (b[3] & 0x0FU) % 10U);
     if (b[3] & 0x80U) s_data.temp_x10 = -s_data.temp_x10;   /* DHT11 doi moi co bit am */
-#else
-    s_data.hum_x10  = (uint16_t)((b[0] << 8) | b[1]);
-    s_data.temp_x10 = (int16_t)(((b[2] & 0x7FU) << 8) | b[3]);
-    if (b[2] & 0x80U) s_data.temp_x10 = -s_data.temp_x10;
-#endif
 }
 
 /* ------------------------------------------------------------------------- */
@@ -106,21 +95,18 @@ void Temp_Init(void)
 {
     GPIO_InitTypeDef g = {0};
 
-    /* Bat clock cho port (an toan ca khi CubeMX chua cau hinh chan nay) */
-    if (DHT_DATA_GPIO_Port == GPIOA) __HAL_RCC_GPIOA_CLK_ENABLE();
-    else if (DHT_DATA_GPIO_Port == GPIOB) __HAL_RCC_GPIOB_CLK_ENABLE();
-
+    __HAL_RCC_GPIOA_CLK_ENABLE();
     pin_write(GPIO_PIN_SET);
-    g.Pin   = DHT_DATA_Pin;
+    g.Pin   = DHT11_PIN;
     g.Mode  = GPIO_MODE_OUTPUT_OD;      /* open-drain: vua ghi vua doc duoc IDR */
     g.Pull  = GPIO_PULLUP;
     g.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(DHT_DATA_GPIO_Port, &g);
+    HAL_GPIO_Init(DHT11_PORT, &g);
 
     dwt_init();
 
     s_state     = ST_IDLE;
-    s_last_read = HAL_GetTick() - TEMP_READ_PERIOD_MS + 1500U; /* DHT can ~1 s on dinh sau cap nguon */
+    s_last_read = HAL_GetTick() - TEMP_READ_PERIOD_MS + 1500U; /* DHT11 can ~1 s on dinh sau cap nguon */
 }
 
 uint8_t Temp_Process(void)
@@ -137,7 +123,7 @@ uint8_t Temp_Process(void)
             return 0;
 
         case ST_START_LOW:
-            if (now - s_t_start < DHT_START_LOW_MS + 1U) return 0;   /* chua du thoi gian */
+            if (now - s_t_start < DHT11_START_LOW_MS + 1U) return 0;   /* chua du 20 ms */
             {
                 uint8_t b[5] = {0};
                 TempStatus_t st = read_frame(b);

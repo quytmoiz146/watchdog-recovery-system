@@ -3,8 +3,8 @@
 ## Phần cứng
 | Kết nối | Chân STM32 |
 |---|---|
-| DHT11/DHT22 – DATA | **PA8** (cần trở kéo lên 4.7–10 kΩ; module 3 chân đã có sẵn) |
-| DHT – VCC / GND | 3.3 V / GND |
+| DHT11 – DATA | **PA8** (module 3 chân đã có trở kéo lên) |
+| DHT11 – VCC / GND | 3.3 V / GND |
 | USB-TTL RX / TX / GND | PA9 / PA10 / GND |
 | LED heartbeat | PC13 (onboard) |
 
@@ -13,15 +13,16 @@ Terminal: **115200 8N1**. Nên bật timestamp của terminal (Tera Term: *Setup
 ## A. Ứng dụng nền
 | # | Thao tác | Kết quả mong đợi | Thực tế |
 |---|---|---|---|
-| A1 | Cấp nguồn | Banner, `Nguyen nhan: POWER-ON`, LED nháy 1 Hz | |
+| A1 | Cấp nguồn | Banner `Cam bien: DHT11 (PA8)`, LED nháy 1 Hz | |
 | A2 | Chờ 2 s | `[TEMP] Nhiet do: xx.x C \| Do am: yy.y %` mỗi 2 s | |
-| A3 | Hơ nóng / chạm tay vào DHT | Nhiệt độ tăng dần | |
-| A4 | Rút dây DATA của DHT | `Loi doc cam bien: KHONG PHAN HOI`; sau 3 lần → `[HEALTH] WARNING`, LED nháy kép | |
-| A5 | Cắm lại DHT | Đọc OK → `[HEALTH] OK`, LED về 1 Hz | |
-| A6 | Nhấn NRST | `NRST PIN`, số lần reset tăng | |
+| A3 | Hơ nóng / chạm tay vào DHT11 | Nhiệt độ tăng dần | |
+| A4 | Rút dây DATA của DHT11 | `Loi doc cam bien: KHONG PHAN HOI`; sau 3 lần → `[HEALTH] WARNING`, LED nháy kép | |
+| A5 | Cắm lại DHT11 | Đọc OK → `[HEALTH] OK`, LED về 1 Hz | |
 
 ## B. So sánh IWDG vs WWDG (dùng nút nhấn lỗi của SV2)
 Nạp firmware 2 lần: `APP_ENABLE_WWDG 0` và `APP_ENABLE_WWDG 1` (trong `main.c`). Mỗi lần nhấn lần lượt từng nút lỗi của SV2, ghi lại nguyên nhân reset và thời gian từ lúc nhấn nút đến lúc banner khởi động lại hiện ra.
+
+> Dòng log nguyên nhân reset (`[RESET] Nguyen nhan: ...`) chỉ có sau khi tích hợp module của SV3 (`Status_LogReset(Reset_GetReason(), Reset_GetCount())`). Trước đó vẫn đo được thời gian reset qua banner khởi động lại.
 
 | Lỗi (nút của SV2) | `APP_ENABLE_WWDG 0` (chỉ IWDG) | `APP_ENABLE_WWDG 1` (IWDG + WWDG) |
 |---|---|---|

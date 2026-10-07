@@ -168,8 +168,8 @@ void Status_Init(UART_HandleTypeDef *huart)
     Status_LogMessage("==================================================");
     Status_LogMessage("  WATCHDOG RECOVERY SYSTEM - STM32F103C8T6");
     Status_Printf    ("  Build: %s %s", __DATE__, __TIME__);
-    Status_Printf    ("  Cam bien: DHT%d, chu ky doc %lu ms",
-                      DHT_TYPE, (unsigned long)TEMP_READ_PERIOD_MS);
+    Status_Printf    ("  Cam bien: DHT11 (PA8), chu ky doc %lu ms",
+                      (unsigned long)TEMP_READ_PERIOD_MS);
     Status_LogMessage("==================================================");
 }
 
@@ -242,17 +242,6 @@ const char *Status_HealthStr(HealthStatus_t h)
     }
 }
 
-const char *Status_FaultStr(FaultType_t f)
-{
-    switch (f) {
-        case FAULT_NONE:          return "NONE";
-        case FAULT_INFINITE_LOOP: return "INFINITE LOOP";
-        case FAULT_HARD_FAULT:    return "HARDFAULT";
-        case FAULT_SENSOR_ERROR:  return "SENSOR ERROR";
-        default:                  return "?";
-    }
-}
-
 void Status_LogReset(ResetReason_t reason, uint32_t count)
 {
     Status_Printf("[RESET] Nguyen nhan: %s | So lan reset: %lu",
@@ -273,11 +262,6 @@ void Status_LogHealth(HealthStatus_t health)
         case HEALTH_CRITICAL: Status_SetHeartbeat(HB_FAULT);   break;
         default: break;
     }
-}
-
-void Status_LogFault(FaultType_t fault)
-{
-    Status_Printf("[FAULT] Kich hoat loi mo phong: %s", Status_FaultStr(fault));
 }
 
 void Status_PrintStatus(void)

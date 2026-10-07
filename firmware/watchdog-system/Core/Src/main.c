@@ -71,32 +71,7 @@ static void MX_WWDG_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* ===================== TAM THOI (TEST DOC LAP CHO SV4) =====================
- * Hai ham duoi day chi de SV4 test module rieng.
- * Khi tich hop: thay bang Reset_GetReason()/Reset_GetCount() cua SV3.
- * ========================================================================== */
-static ResetReason_t TEMP_ReadResetReason(void)
-{
-  ResetReason_t r;
-  /* Thu tu kiem tra quan trong: khi IWDG/WWDG/SW/POR reset thi co PINRST
-   * cung bi set, nen PINRST phai kiem tra CUOI CUNG. */
-  if      (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) r = RESET_LOW_POWER;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) r = RESET_IWDG;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST)) r = RESET_WWDG;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST))  r = RESET_SOFTWARE;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST))  r = RESET_POWER_ON;
-  else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))  r = RESET_PIN;
-  else                                           r = RESET_UNKNOWN;
-  __HAL_RCC_CLEAR_RESET_FLAGS();
-  return r;
-}
 
-static uint32_t TEMP_IncResetCount(void)
-{
-  uint32_t c = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) + 1U;
-  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, c);
-  return c;
-}
 /* USER CODE END 0 */
 
 /**
@@ -133,13 +108,10 @@ int main(void)
   MX_RTC_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* ----- SV4: khoi tao UART log + LED heartbeat ----- */
+  /* ----- SV4: khoi tao UART log + LED heartbeat + DHT11 ----- */
   Status_Init(&huart1);
 
-  /* ----- Ghi log nguyen nhan reset (TEMP -> SV3 thay the) ----- */
-  ResetReason_t reason = TEMP_ReadResetReason();
-  uint32_t      count  = TEMP_IncResetCount();
-  Status_LogReset(reason, count);
+  /* SV3: Status_LogReset(Reset_GetReason(), Reset_GetCount()); */
 
 #if APP_ENABLE_WWDG
   /* WWDG KHONG tu khoi dong (da tat "Generate function call" trong CubeMX)

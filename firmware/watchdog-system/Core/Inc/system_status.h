@@ -44,12 +44,10 @@ void Status_LogMessage(const char *msg);
 void Status_Printf(const char *fmt, ...);
 void Status_LogReset(ResetReason_t reason, uint32_t count);
 void Status_LogHealth(HealthStatus_t health);
-void Status_LogFault(FaultType_t fault);
 void Status_PrintStatus(void);
 
 const char *Status_ResetReasonStr(ResetReason_t reason);
 const char *Status_HealthStr(HealthStatus_t health);
-const char *Status_FaultStr(FaultType_t fault);
 
 /* ===== WWDG ===== */
 void    Status_WWDG_Attach(WWDG_HandleTypeDef *hwwdg);  /* goi SAU MX_WWDG_Init() */
