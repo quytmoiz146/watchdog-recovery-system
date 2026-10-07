@@ -417,6 +417,21 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f1xx_hal_msp.c</FilePath>
             </File>
+            <File>
+              <FileName>temp_sensor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Core\Inc\temp_sensor.h</FilePath>
+            </File>
+            <File>
+              <FileName>system_status.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Core\Inc\system_status.h</FilePath>
+            </File>
+            <File>
+              <FileName>shared_types.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Core\Inc\shared_types.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

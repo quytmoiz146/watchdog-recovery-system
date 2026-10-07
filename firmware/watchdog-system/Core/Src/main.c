@@ -118,6 +118,8 @@ int main(void)
    * vi mot khi da bat thi WWDG khong the tat lai. */
   MX_WWDG_Init();
   Status_WWDG_Attach(&hwwdg);
+#else
+  (void)MX_WWDG_Init;   /* chi tham chieu (KHONG goi) de tranh warning #177 */
 #endif
 
   Status_Printf("[WDG] IWDG: ON (~1 s) | WWDG: %s",
