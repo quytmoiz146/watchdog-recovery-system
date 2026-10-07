@@ -32,3 +32,17 @@
 Thumbs.db
 desktop.ini
 *.swp
+
+# ===== Keil build output (nam trong firmware/watchdog-system/MDK-ARM) =====
+**/MDK-ARM/watchdog-system/
+**/MDK-ARM/*.uvguix.*
+**/MDK-ARM/*.lst
+**/MDK-ARM/*.bak
+**/MDK-ARM/Listings/
+**/MDK-ARM/Objects/
+*.crf
+*.axf
+*.lnp
+*.sct
+*.dep
+*.build_log.htm
