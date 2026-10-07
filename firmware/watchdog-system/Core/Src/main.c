@@ -21,8 +21,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "shared_types.h"
-#include "system_status.h"   /* SV4 */
+#include <stdio.h>
+#include <string.h>
+#include "system_status.h"   /* SV4: DHT11 + heartbeat + UART log + WWDG */
+#include "lcd.h"             /* SV3: LCD 16x2 I2C                          */
+#include "doc_loi.h"         /* SV3: doc nguyen nhan reset + dem (BKP)     */
+#include "mo_phong_loi.h"    /* SV2/SV3: nut nhan EXTI -> mo phong loi     */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -71,7 +75,57 @@ static void MX_WWDG_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define LCD_RESET_INFO_MS   5000U   /* hien thi thong tin reset tren LCD 5 s */
 
+/* Chuyen chuoi nguyen nhan cua SV3 (doc_loi) sang enum chung cua SV4 */
+static ResetReason_t map_reset_cause(const char *c)
+{
+  if (strcmp(c, "POWER") == 0) return RESET_POWER_ON;
+  if (strcmp(c, "IWDG")  == 0) return RESET_IWDG;
+  if (strcmp(c, "WWDG")  == 0) return RESET_WWDG;
+  if (strcmp(c, "SOFT")  == 0) return RESET_SOFTWARE;
+  if (strcmp(c, "NRST")  == 0) return RESET_PIN;
+  return RESET_UNKNOWN;
+}
+
+static const char *fault_name(FaultCode f)
+{
+  switch (f) {
+    case FAULT_LOOP:      return "TREO VONG LAP";
+    case FAULT_SENSOR:    return "CHO CAM BIEN VO HAN";
+    case FAULT_HARDFAULT: return "HARDFAULT";
+    default:              return "KHONG CO";
+  }
+}
+
+/* Hien thi nhiet do / do am len LCD khi co ket qua doc moi */
+static void lcd_show_temp(void)
+{
+  static uint32_t last_tick = 0;
+  const TempData_t *d = Temp_GetData();
+  char line[17];
+
+  if (d->tick == last_tick) return;            /* chua co ket qua moi */
+  last_tick = d->tick;
+
+  if (d->status == TEMP_OK) {
+    int t = d->temp_x10;
+    snprintf(line, sizeof(line), "Nhiet do:%s%2d.%dC ", (t < 0) ? "-" : " ",
+             (t < 0 ? -t : t) / 10, (t < 0 ? -t : t) % 10);
+    lcd_set_cursor(1, 1);
+    lcd_print_string(line);
+    snprintf(line, sizeof(line), "Do am:   %3u.%u%% ",
+             (unsigned)(d->hum_x10 / 10U), (unsigned)(d->hum_x10 % 10U));
+    lcd_set_cursor(2, 1);
+    lcd_print_string(line);
+  } else {
+    lcd_set_cursor(1, 1);
+    lcd_print_string("DHT11: LOI DOC  ");
+    snprintf(line, sizeof(line), "%-16s", Temp_StatusStr(d->status));
+    lcd_set_cursor(2, 1);
+    lcd_print_string(line);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -108,10 +162,19 @@ int main(void)
   MX_RTC_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* ----- SV4: khoi tao UART log + LED heartbeat + DHT11 ----- */
+  /* ----- SV4: UART log + LED heartbeat + DHT11 ----- */
   Status_Init(&huart1);
 
-  /* SV3: Status_LogReset(Reset_GetReason(), Reset_GetCount()); */
+  /* ----- SV3: doc nguyen nhan reset + so lan reset (BKP), hien thi LCD ----- */
+  ResetInfor ri;
+  lcd_init(&hi2c1);
+  doc_loi_Init(&ri);
+  lcd_display_clear();
+  hien_thi_loi(&ri);
+
+  /* SV4: ghi log nguyen nhan reset qua UART (+ LED nhay nhanh neu do watchdog) */
+  Status_LogReset(map_reset_cause(ri.cause), ri.count);
+  Status_Printf("[RESET] Loi truoc khi reset: %s", fault_name(ri.fault));
 
 #if APP_ENABLE_WWDG
   /* WWDG KHONG tu khoi dong (da tat "Generate function call" trong CubeMX)
@@ -124,6 +187,9 @@ int main(void)
 
   Status_Printf("[WDG] IWDG: ON (~1 s) | WWDG: %s",
                 APP_ENABLE_WWDG ? "ON (~58 ms)" : "OFF");
+
+  uint32_t lcd_info_start = HAL_GetTick();
+  uint8_t  lcd_show_info  = 1;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -139,7 +205,18 @@ int main(void)
     /* SV4 - ung dung nen: service WWDG + LED heartbeat + do nhiet (non-blocking) */
     Status_Process();
 
-    /* SV2: kiem tra nut nhan BTN_FAULT1/BTN_FAULT2 -> kich hoat loi mo phong */
+    /* LCD: giu thong tin reset 5 s (khong dung HAL_Delay), sau do hien thi nhiet do */
+    if (lcd_show_info) {
+      if (HAL_GetTick() - lcd_info_start >= LCD_RESET_INFO_MS) {
+        lcd_show_info = 0;
+        lcd_display_clear();
+      }
+    } else {
+      lcd_show_temp();
+    }
+
+    /* SV2/SV3: nut nhan (EXTI) da bam -> kich hoat loi mo phong */
+    quet_loi();
   }
   /* USER CODE END 3 */
 }
@@ -402,11 +479,24 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_HEARTBEAT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : BTN_FAULT1_Pin BTN_FAULT2_Pin */
-  GPIO_InitStruct.Pin = BTN_FAULT1_Pin|BTN_FAULT2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  /*Configure GPIO pins : BTN_FAULT1_Pin BTN_FAULT2_Pin BTN_FAULT3_Pin BTN_FAULT4_Pin */
+  GPIO_InitStruct.Pin = BTN_FAULT1_Pin|BTN_FAULT2_Pin|BTN_FAULT3_Pin|BTN_FAULT4_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

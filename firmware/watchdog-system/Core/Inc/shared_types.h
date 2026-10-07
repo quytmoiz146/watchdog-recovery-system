@@ -27,12 +27,6 @@ typedef enum {
     HEALTH_CRITICAL = 0x02
 } HealthStatus_t;
 
-/* ===== Loai loi mo phong (SV2 implement, SV4 log) ===== */
-typedef enum {
-    FAULT_NONE          = 0x00,
-    FAULT_INFINITE_LOOP = 0x01,
-    FAULT_HARD_FAULT    = 0x02,
-    FAULT_SENSOR_ERROR  = 0x03
-} FaultType_t;
+/* Loai loi mo phong: dung FaultCode trong doc_loi.h (SV3) */
 
 #endif /* SHARED_TYPES_H */
