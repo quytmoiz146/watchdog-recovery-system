@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fault_injection.h"
 
 /* USER CODE END Includes */
 
@@ -51,6 +52,7 @@ UART_HandleTypeDef huart1;
 WWDG_HandleTypeDef hwwdg;
 
 /* USER CODE BEGIN PV */
+static uint32_t sv2_last_iwdg_refresh;
 
 /* USER CODE END PV */
 
@@ -63,6 +65,7 @@ static void MX_RTC_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_WWDG_Init(void);
 /* USER CODE BEGIN PFP */
+static void SV2_DemoWatchdogService(void);
 
 /* USER CODE END PFP */
 
@@ -106,6 +109,9 @@ int main(void)
   MX_USART1_UART_Init();
   MX_WWDG_Init();
   /* USER CODE BEGIN 2 */
+  Fault_Init();
+  sv2_last_iwdg_refresh = HAL_GetTick();
+  HAL_IWDG_Refresh(&hiwdg);
 
   /* USER CODE END 2 */
 
@@ -116,6 +122,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    Fault_Process();
+    SV2_DemoWatchdogService();
   }
   /* USER CODE END 3 */
 }
@@ -390,6 +398,35 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* The cloned main loop has no watchdog service yet. This demo service
+   keeps the existing watchdogs alive ONLY while main makes progress.
+   SV1 can replace this call with the group's main-task health supervisor.
+   Never move watchdog refresh into SysTick, another ISR, or a fault loop. */
+static void SV2_DemoWatchdogService(void)
+{
+  uint32_t now;
+  uint32_t counter;
+
+  if (Fault_GetActive() != FAULT_NONE)
+  {
+    return;
+  }
+
+  now = HAL_GetTick();
+  if ((uint32_t)(now - sv2_last_iwdg_refresh) >= 100U)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    sv2_last_iwdg_refresh = now;
+  }
+
+  /* Refresh strictly inside the existing WWDG window, never too early.
+     Reading the counter avoids assumptions about clock frequency/ticks. */
+  counter = hwwdg.Instance->CR & WWDG_CR_T;
+  if ((counter < hwwdg.Init.Window) && (counter > 0x3FU))
+  {
+    HAL_WWDG_Refresh(&hwwdg);
+  }
+}
 
 /* USER CODE END 4 */
 
