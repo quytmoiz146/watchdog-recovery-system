@@ -10,7 +10,8 @@
       <TargetName>watchdog-system</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <uAC6>0</uAC6>
+      <pCCUsed>6240000::V6.24::ARMCLANG</pCCUsed>
+      <uAC6>1</uAC6>
       <TargetOption>
         <TargetCommonOption>
           <Device>STM32F103C8</Device>
@@ -47,7 +48,7 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>watchdog-system\</OutputDirectory>
+          <OutputDirectory>sv2-ac6\</OutputDirectory>
           <OutputName>watchdog-system</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
