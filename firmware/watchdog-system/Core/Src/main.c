@@ -176,13 +176,9 @@ int main(void)
   Status_LogReset(map_reset_cause(ri.cause), ri.count);
   Status_Printf("[RESET] Loi truoc khi reset: %s", fault_name(ri.fault));
 
-#if APP_ENABLE_WWDG
-  /* WWDG KHONG tu khoi dong (da tat "Generate function call" trong CubeMX)
-   * vi mot khi da bat thi WWDG khong the tat lai. */
   MX_WWDG_Init();
+#if APP_ENABLE_WWDG
   Status_WWDG_Attach(&hwwdg);
-#else
-  (void)MX_WWDG_Init;   /* chi tham chieu (KHONG goi) de tranh warning #177 */
 #endif
 
   Status_Printf("[WDG] IWDG: ON (~1 s) | WWDG: %s",
@@ -430,7 +426,7 @@ static void MX_WWDG_Init(void)
 {
 
   /* USER CODE BEGIN WWDG_Init 0 */
-
+  if (!APP_ENABLE_WWDG) return;
   /* USER CODE END WWDG_Init 0 */
 
   /* USER CODE BEGIN WWDG_Init 1 */

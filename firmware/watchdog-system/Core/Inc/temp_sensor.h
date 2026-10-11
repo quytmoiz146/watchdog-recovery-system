@@ -31,6 +31,7 @@ typedef struct {
     uint32_t     tick;        /* HAL_GetTick() luc doc          */
     uint32_t     ok_count;
     uint32_t     err_count;
+    uint8_t      raw[5];      /* 5 byte du lieu tho tu cam bien */
 } TempData_t;
 
 void              Temp_Init(void);

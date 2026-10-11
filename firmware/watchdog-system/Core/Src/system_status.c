@@ -136,8 +136,8 @@ static void temp_task(void)
     if (d->status == TEMP_OK) {
         char t[12], h[12];
         fmt_x10(t, sizeof(t), d->temp_x10);
-        fmt_x10(h, sizeof(h), d->hum_x10);
-        Status_Printf("[TEMP] Nhiet do: %s C | Do am: %s %%", t, h);
+        Status_Printf("[TEMP] Nhiet do: %s C | Do am: %s %% (Raw: %02X %02X %02X %02X %02X)",
+                      t, h, d->raw[0], d->raw[1], d->raw[2], d->raw[3], d->raw[4]);
 
         s_temp_fail_streak = 0;
         if (d->temp_x10 >= TEMP_ALARM_X10) {
