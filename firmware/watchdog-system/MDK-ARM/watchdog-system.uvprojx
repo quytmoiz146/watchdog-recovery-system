@@ -434,6 +434,16 @@
               <FilePath>../Core/Src/stm32f1xx_hal_msp.c</FilePath>
             </File>
             <File>
+              <FileName>iwdg_monitor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/iwdg_monitor.c</FilePath>
+            </File>
+            <File>
+              <FileName>iwdg_monitor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Core\Inc\iwdg_monitor.h</FilePath>
+            </File>
+            <File>
               <FileName>temp_sensor.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Core\Inc\temp_sensor.h</FilePath>

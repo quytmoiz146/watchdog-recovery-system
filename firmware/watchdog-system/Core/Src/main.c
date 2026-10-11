@@ -23,7 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
-#include "system_status.h"   /* SV4: DHT11 + heartbeat + UART log + WWDG */
+#include "iwdg_monitor.h"    /* SV1: giam sat va nap lai IWDG theo tac vu  */
+#include "system_status.h"   /* SV4: DHT11 + heartbeat + UART log + WWDG   */
 #include "lcd.h"             /* SV3: LCD 16x2 I2C                          */
 #include "doc_loi.h"         /* SV3: doc nguyen nhan reset + dem (BKP)     */
 #include "mo_phong_loi.h"    /* SV2/SV3: nut nhan EXTI -> mo phong loi     */
@@ -171,6 +172,7 @@ int main(void)
   doc_loi_Init(&ri);
   lcd_display_clear();
   hien_thi_loi(&ri);
+  IWDG_Monitor_Register(TASK_ID_DISPLAY);
 
   /* SV4: ghi log nguyen nhan reset qua UART (+ LED nhay nhanh neu do watchdog) */
   Status_LogReset(map_reset_cause(ri.cause), ri.count);
@@ -181,7 +183,9 @@ int main(void)
   Status_WWDG_Attach(&hwwdg);
 #endif
 
-  Status_Printf("[WDG] IWDG: ON (~1 s) | WWDG: %s",
+  Status_Printf("[WDG] IWDG: ON (%lu ms @40kHz, min %lu ms @60kHz) | WWDG: %s",
+                (unsigned long)IWDG_Monitor_GetTimeoutMs(40000U),
+                (unsigned long)IWDG_Monitor_GetTimeoutMs(IWDG_LSI_MAX_HZ),
                 APP_ENABLE_WWDG ? "ON (~58 ms)" : "OFF");
 
   uint32_t lcd_info_start = HAL_GetTick();
@@ -195,13 +199,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* TEMP: SV1 thay bang IWDG_Monitor_Feed() */
-    HAL_IWDG_Refresh(&hiwdg);
-
-    /* SV4 - ung dung nen: service WWDG + LED heartbeat + do nhiet (non-blocking) */
+    /* SV4 - ung dung nen: service WWDG + LED heartbeat + do nhiet + checkin TASK_ID_STATUS */
     Status_Process();
 
-    /* LCD: giu thong tin reset 5 s (khong dung HAL_Delay), sau do hien thi nhiet do */
+    /* SV3 - LCD: giu thong tin reset 5 s (khong dung HAL_Delay), sau do hien thi nhiet do */
     if (lcd_show_info) {
       if (HAL_GetTick() - lcd_info_start >= LCD_RESET_INFO_MS) {
         lcd_show_info = 0;
@@ -210,9 +211,13 @@ int main(void)
     } else {
       lcd_show_temp();
     }
+    IWDG_Monitor_Checkin(TASK_ID_DISPLAY);
 
     /* SV2/SV3: nut nhan (EXTI) da bam -> kich hoat loi mo phong */
     quet_loi();
+
+    /* SV1: chi nap lai IWDG khi MOI tac vu da Register deu Checkin "khoe" */
+    IWDG_Monitor_Feed();
   }
   /* USER CODE END 3 */
 }
@@ -315,13 +320,13 @@ static void MX_IWDG_Init(void)
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
   hiwdg.Init.Prescaler = IWDG_PRESCALER_64;
-  hiwdg.Init.Reload = 625;
+  hiwdg.Init.Reload = 624;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN IWDG_Init 2 */
-
+  IWDG_Monitor_Init(&hiwdg);
   /* USER CODE END IWDG_Init 2 */
 
 }

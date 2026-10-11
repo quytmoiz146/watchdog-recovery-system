@@ -4,6 +4,7 @@
  *          Do nhiet (DHT) + LED heartbeat + UART log + WWDG service.
  */
 #include "system_status.h"
+#include "iwdg_monitor.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -163,6 +164,7 @@ void Status_Init(UART_HandleTypeDef *huart)
     s_led_state = -1;
     Status_SetHeartbeat(HB_NORMAL);
     Temp_Init();
+    IWDG_Monitor_Register(TASK_ID_STATUS);
 
     uart_send("\r\n", 2);
     Status_LogMessage("==================================================");
@@ -178,6 +180,7 @@ void Status_Process(void)
     Status_WWDG_Service();
     heartbeat_update();
     temp_task();
+    IWDG_Monitor_Checkin(TASK_ID_STATUS);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -187,6 +190,7 @@ void Status_SetHeartbeat(HeartbeatMode_t mode)
 {
     s_hb_mode  = mode;
     s_hb_start = HAL_GetTick();
+    heartbeat_update();
 }
 
 HeartbeatMode_t Status_GetHeartbeat(void)

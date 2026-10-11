@@ -27,6 +27,12 @@ typedef enum {
     HEALTH_CRITICAL = 0x02
 } HealthStatus_t;
 
+/* ===== Dinh danh tac vu cho IWDG_Monitor (SV1) ===== */
+typedef enum {
+    TASK_ID_STATUS  = 0U,   /* SV4: ung dung nen (do nhiet, heartbeat, UART) */
+    TASK_ID_DISPLAY = 1U    /* SV3: hien thi LCD                             */
+} TaskId_t;
+
 /* Loai loi mo phong: dung FaultCode trong doc_loi.h (SV3) */
 
 #endif /* SHARED_TYPES_H */
