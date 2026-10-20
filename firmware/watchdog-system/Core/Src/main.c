@@ -28,6 +28,7 @@
 #include "lcd.h"             /* SV3: LCD 16x2 I2C                          */
 #include "doc_loi.h"         /* SV3: doc nguyen nhan reset + dem (BKP)     */
 #include "mo_phong_loi.h"    /* SV2/SV3: nut nhan EXTI -> mo phong loi     */
+#include "flash_log.h"       /* Mo rong: luu log loi vao Flash Page 63     */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -177,6 +178,20 @@ int main(void)
   /* SV4: ghi log nguyen nhan reset qua UART (+ LED nhay nhanh neu do watchdog) */
   Status_LogReset(map_reset_cause(ri.cause), ri.count);
   Status_Printf("[RESET] Loi truoc khi reset: %s", fault_name(ri.fault));
+
+  /* Mo rong: In thong tin PC va LR neu truoc do bi HardFault */
+  if (ri.fault == FAULT_HARDFAULT && ri.has_hardfault_info) {
+    Status_Printf("[RESET] HardFault Context: PC = 0x%08lX | LR = 0x%08lX",
+                  (unsigned long)ri.fault_pc, (unsigned long)ri.fault_lr);
+  }
+
+  /* Mo rong: Khoi tao va luu log su co vao Flash (Page 63) */
+  FlashLog_Init();
+  if (ri.fault != FAULT_NONE || ri.count == 1) {
+    FlashLog_Write((uint16_t)ri.count, (uint8_t)map_reset_cause(ri.cause),
+                   (uint8_t)ri.fault, 0, ri.fault_pc, ri.fault_lr);
+  }
+  FlashLog_PrintAll();
 
   MX_WWDG_Init();
 #if APP_ENABLE_WWDG

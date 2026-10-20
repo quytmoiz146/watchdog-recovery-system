@@ -52,7 +52,67 @@
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void uart_direct_putc(char c)
+{
+  if ((RCC->APB2ENR & RCC_APB2ENR_USART1EN) && (USART1->CR1 & USART_CR1_UE)) {
+    while (!(USART1->SR & USART_SR_TXE)) {
+    }
+    USART1->DR = (uint16_t)c;
+  }
+}
 
+static void uart_direct_puts(const char *s)
+{
+  while (*s) {
+    if (*s == '\n') {
+      uart_direct_putc('\r');
+    }
+    uart_direct_putc(*s++);
+  }
+}
+
+static void uart_direct_puthex32(uint32_t val)
+{
+  const char hex[] = "0123456789ABCDEF";
+  int i;
+  for (i = 7; i >= 0; i--) {
+    uart_direct_putc(hex[(val >> (i * 4)) & 0x0F]);
+  }
+}
+
+void HardFault_Handler_C(uint32_t *stacked_regs)
+{
+  uint32_t stacked_lr = stacked_regs[5];
+  uint32_t stacked_pc = stacked_regs[6];
+
+  /* Bat clock va quyen ghi vao Backup Register */
+  __HAL_RCC_BKP_CLK_ENABLE();
+  __HAL_RCC_PWR_CLK_ENABLE();
+  PWR->CR |= PWR_CR_DBP;
+
+  /* Luu thong tin su co vao BKP (khong bi xoa khi Watchdog reset) */
+  BKP->DR1 = (uint16_t)FAULT_HARDFAULT;
+  BKP->DR3 = (uint16_t)(stacked_pc & 0xFFFFU);
+  BKP->DR4 = (uint16_t)((stacked_pc >> 16) & 0xFFFFU);
+  BKP->DR5 = (uint16_t)(stacked_lr & 0xFFFFU);
+  BKP->DR6 = (uint16_t)((stacked_lr >> 16) & 0xFFFFU);
+  BKP->DR7 = 0xA55AU; /* Co magic xac nhan da luu PC/LR */
+
+  /* In truc tiep ra UART1 (polling thanh ghi khong phu thuoc ngat/SysTick) */
+  uart_direct_puts("\r\n==================================================\r\n");
+  uart_direct_puts("  !!! NGOAI LE HARDFAULT - PHAT HIEN SU CO !!!\r\n");
+  uart_direct_puts("  PC (Dia chi lenh gay loi): 0x");
+  uart_direct_puthex32(stacked_pc);
+  uart_direct_puts("\r\n  LR (Dia chi tra ve)      : 0x");
+  uart_direct_puthex32(stacked_lr);
+  uart_direct_puts("\r\n  Dang cho Watchdog Reset (~1 s) de tu phuc hoi...\r\n");
+  uart_direct_puts("==================================================\r\n");
+
+  /* Dung cho Watchdog tran va Reset MCU */
+  while (1)
+  {
+  }
+}
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -82,17 +142,39 @@ void NMI_Handler(void)
 /**
   * @brief This function handles Hard fault interrupt.
   */
+#if defined(__CC_ARM)
+__asm void HardFault_Handler(void)
+{
+  IMPORT HardFault_Handler_C
+  TST LR, #4
+  ITE EQ
+  MRSEQ R0, MSP
+  MRSNE R0, PSP
+  B HardFault_Handler_C
+}
+#elif defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
 void HardFault_Handler(void)
 {
-  /* USER CODE BEGIN HardFault_IRQn 0 */
-  ghi_lai_loi(FAULT_HARDFAULT);
-  /* USER CODE END HardFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    /* USER CODE END W1_HardFault_IRQn 0 */
-  }
+  __asm volatile(
+    "tst lr, #4 \n"
+    "ite eq \n"
+    "mrseq r0, msp \n"
+    "mrsne r0, psp \n"
+    "b HardFault_Handler_C \n"
+  );
 }
+#else
+void HardFault_Handler(void)
+{
+  __asm volatile(
+    "tst lr, #4 \n"
+    "ite eq \n"
+    "mrseq r0, msp \n"
+    "mrsne r0, psp \n"
+    "b HardFault_Handler_C \n"
+  );
+}
+#endif
 
 /**
   * @brief This function handles Memory management fault.
