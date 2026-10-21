@@ -10,6 +10,8 @@
  */
 #include "temp_sensor.h"
 
+extern void Status_WWDG_Service(void);
+
 #define DHT11_START_LOW_MS    20U   /* >= 18 ms */
 #define BIT_ONE_THRESHOLD_US  40U   /* HIGH > 40 us => bit 1 */
 
@@ -214,8 +216,10 @@ uint8_t Temp_Process(void)
         case ST_START_LOW:
             if (now - s_t_start < DHT11_START_LOW_MS) return 0;   /* cho du 20 ms */
             {
+                Status_WWDG_Service();
                 uint8_t b[5] = {0};
                 TempStatus_t st = read_frame(b);
+                Status_WWDG_Service();
                 pin_mode_output_od();
                 pin_write(GPIO_PIN_SET);
 

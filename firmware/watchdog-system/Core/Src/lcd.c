@@ -1,5 +1,7 @@
 #include "lcd.h"
 
+extern void Status_WWDG_Service(void);
+
 
 static void lcd_enable(uint8_t data);
 static void udelay(uint8_t);
@@ -48,6 +50,7 @@ void lcd_display_clear(void){
 	lcd_send_cmd(LCD_CMD_CLEAR_DISPLAY);
 
 	HAL_Delay(2);
+	Status_WWDG_Service();
 }
 
 
@@ -98,6 +101,7 @@ void lcd_print_string(char *message){
 	while(*message != '\0'){
 		current_char = (uint8_t)*message++;
 		lcd_print_char(current_char);
+		Status_WWDG_Service();
 	}
 }
 
@@ -106,6 +110,7 @@ void lcd_display_return_home(void){
 	lcd_send_cmd(LCD_CMD_RETURN_HOME);
 
 	HAL_Delay(2);
+	Status_WWDG_Service();
 }
 
 

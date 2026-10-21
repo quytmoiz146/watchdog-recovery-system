@@ -40,7 +40,7 @@
 /* USER CODE BEGIN PD */
 /* 1 = bat WWDG de so sanh voi IWDG.
  * Khi bat: main loop KHONG duoc block qua ~15 ms (khong dung HAL_Delay dai). */
-#define APP_ENABLE_WWDG     0
+#define APP_ENABLE_WWDG     1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/

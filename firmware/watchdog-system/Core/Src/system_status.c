@@ -310,8 +310,18 @@ void Status_WWDG_Service(void)
 {
     if (s_hwwdg == NULL) return;
 
-    /* Chi refresh khi counter da xuong toi cua so (counter <= window) */
-    if ((WWDG->CR & WWDG_CR_T) <= (WWDG->CFR & WWDG_CFR_W)) {
-        HAL_WWDG_Refresh(s_hwwdg);
+    uint32_t counter = WWDG->CR & WWDG_CR_T;
+    uint32_t window  = WWDG->CFR & WWDG_CFR_W;
+
+    /* Chi refresh khi counter thuc su nam trong cua so hop le:
+     * - Nho hon window (counter < window, strictly lower):
+     *   Neu counter >= window (vi du counter == window = 80) ma nap lai,
+     *   phan cung WWDG se kich hoat RESET ngay lap tuc do loi vi pham cua so (Window Violation)!
+     * - Lon hon hoac bang 64 (counter >= 64U):
+     *   Neu counter < 64 (0x3F) thi da bi loi Underflow.
+     * - Luon bat bit WWDG_CR_WDGA (bit 7) khi ghi CR de tuong thich chip clone tren Blue Pill.
+     */
+    if ((counter < window) && (counter >= 64U)) {
+        WRITE_REG(WWDG->CR, WWDG_CR_WDGA | (s_hwwdg->Init.Counter & WWDG_CR_T));
     }
 }
